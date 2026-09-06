@@ -1,4 +1,4 @@
-name: Build APK
+name: Build APK - ForgeAPK Universal v11
 run-name: Code2APK-${{ inputs.build_id }}
 
 on:
@@ -84,7 +84,15 @@ jobs:
             @capacitor/haptics \
             @capacitor/device \
             @capacitor/network \
-            @capacitor/status-bar
+            @capacitor/status-bar \
+            @capacitor/preferences \
+            @capacitor/browser \
+            @capacitor/clipboard \
+            @capacitor/dialog \
+            @capacitor/toast \
+            @capacitor/app \
+            @capacitor/keyboard \
+            @capacitor/motion
 
           cp -R ../buildsrc/www ./www
           mkdir -p assets
@@ -124,21 +132,106 @@ jobs:
           let xml=fs.readFileSync(path,'utf8');
 
           const perms=['android.permission.INTERNET'];
+          const legacy=[];
+
+          // Core
           if(wanted.has('camera')) perms.push('android.permission.CAMERA');
           if(wanted.has('microphone')) perms.push('android.permission.RECORD_AUDIO');
+
           if(wanted.has('location')){
             perms.push('android.permission.ACCESS_FINE_LOCATION');
             perms.push('android.permission.ACCESS_COARSE_LOCATION');
           }
-          if(wanted.has('notifications')) perms.push('android.permission.POST_NOTIFICATIONS');
-          if(wanted.has('haptics')) perms.push('android.permission.VIBRATE');
-          if(wanted.has('photos')) perms.push('android.permission.READ_MEDIA_IMAGES');
-          if(wanted.has('audio')) perms.push('android.permission.READ_MEDIA_AUDIO');
-          if(wanted.has('video')) perms.push('android.permission.READ_MEDIA_VIDEO');
+
+          if(wanted.has('notifications')){
+            perms.push('android.permission.POST_NOTIFICATIONS');
+          }
+
+          if(wanted.has('haptics')){
+            perms.push('android.permission.VIBRATE');
+          }
+
+          // Files / media
+          if(wanted.has('files')){
+            legacy.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+            legacy.push('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />');
+          }
+
+          if(wanted.has('photos')){
+            perms.push('android.permission.READ_MEDIA_IMAGES');
+            perms.push('android.permission.READ_MEDIA_VISUAL_USER_SELECTED');
+            legacy.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+          }
+
+          if(wanted.has('audio')){
+            perms.push('android.permission.READ_MEDIA_AUDIO');
+            legacy.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+          }
+
+          if(wanted.has('video')){
+            perms.push('android.permission.READ_MEDIA_VIDEO');
+            perms.push('android.permission.READ_MEDIA_VISUAL_USER_SELECTED');
+            legacy.push('    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />');
+          }
+
+          // Networking
+          if(wanted.has('network')){
+            perms.push('android.permission.ACCESS_NETWORK_STATE');
+            perms.push('android.permission.ACCESS_WIFI_STATE');
+          }
+
+          // Background media / tasks
           if(wanted.has('backgroundAudio')){
             perms.push('android.permission.FOREGROUND_SERVICE');
             perms.push('android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK');
             perms.push('android.permission.WAKE_LOCK');
+          }
+
+          if(wanted.has('backgroundTasks')){
+            perms.push('android.permission.FOREGROUND_SERVICE');
+            perms.push('android.permission.FOREGROUND_SERVICE_DATA_SYNC');
+            perms.push('android.permission.WAKE_LOCK');
+          }
+
+          // Installer
+          if(wanted.has('installer')){
+            perms.push('android.permission.REQUEST_INSTALL_PACKAGES');
+          }
+
+          // Bluetooth / nearby devices
+          if(wanted.has('bluetooth')){
+            perms.push('android.permission.BLUETOOTH_SCAN');
+            perms.push('android.permission.BLUETOOTH_CONNECT');
+            perms.push('android.permission.BLUETOOTH_ADVERTISE');
+            legacy.push('    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />');
+            legacy.push('    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />');
+          }
+
+          // NFC
+          if(wanted.has('nfc')){
+            perms.push('android.permission.NFC');
+          }
+
+          // Biometric authentication
+          if(wanted.has('biometric')){
+            perms.push('android.permission.USE_BIOMETRIC');
+          }
+
+          // Contacts
+          if(wanted.has('contacts')){
+            perms.push('android.permission.READ_CONTACTS');
+            perms.push('android.permission.WRITE_CONTACTS');
+          }
+
+          // Calendar
+          if(wanted.has('calendar')){
+            perms.push('android.permission.READ_CALENDAR');
+            perms.push('android.permission.WRITE_CALENDAR');
+          }
+
+          // Fitness / motion
+          if(wanted.has('activityRecognition')){
+            perms.push('android.permission.ACTIVITY_RECOGNITION');
           }
 
           const tags=[...new Set(perms)]
@@ -146,7 +239,16 @@ jobs:
             .map(p=>`    <uses-permission android:name="${p}" />`)
             .join('\n');
 
-          xml=xml.replace(/<application\b/, tags+'\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n\n    <application');
+          const legacyTags=[...new Set(legacy)]
+            .filter(tag=>{
+              const m=tag.match(/android:name="([^"]+)"/);
+              return !m || !xml.includes(`android:name="${m[1]}"`);
+            })
+            .join('\n');
+
+          const allTags=[tags,legacyTags].filter(Boolean).join('\n');
+
+          xml=xml.replace(/<application\b/, allTags+'\n\n    <application');
 
           xml=xml.replace(/<application\b([^>]*)>/,(m,attrs)=>{
             let a=attrs;
@@ -156,6 +258,7 @@ jobs:
           });
 
           fs.writeFileSync(path,xml);
+          console.log('Requested capability keys:',[...wanted]);
           NODE
 
       - name: Add native background audio service
@@ -274,20 +377,6 @@ jobs:
           }
           JAVA
 
-          cat > "$APP_DIR/MainActivity.java" <<JAVA
-          package $APP_ID;
-
-          import android.os.Bundle;
-          import com.getcapacitor.BridgeActivity;
-
-          public class MainActivity extends BridgeActivity {
-            @Override
-            public void onCreate(Bundle savedInstanceState) {
-              registerPlugin(BackgroundAudioPlugin.class);
-              super.onCreate(savedInstanceState);
-            }
-          }
-          JAVA
 
           node <<'NODE'
           const fs=require('fs');
@@ -302,6 +391,442 @@ jobs:
             s=s.replace('</application>',service+'    </application>');
           }
           fs.writeFileSync(path,s);
+          NODE
+
+      - name: Add native APK installer
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ENABLED="$(node -e "const m=require('./buildsrc/meta.json'); console.log((m.permissions||[]).includes('installer')?'yes':'no')")"
+          if [ "$ENABLED" != "yes" ]; then
+            echo "APK installer not requested."
+            exit 0
+          fi
+
+          APP_DIR="capapp/android/app/src/main/java/$(echo "$APP_ID" | tr '.' '/')"
+          mkdir -p "$APP_DIR"
+
+          cat > "$APP_DIR/ApkInstallerPlugin.java" <<JAVA
+          package $APP_ID;
+
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.provider.Settings;
+          import androidx.core.content.FileProvider;
+          import com.getcapacitor.*;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+
+          import java.io.*;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import java.util.concurrent.ExecutorService;
+          import java.util.concurrent.Executors;
+
+          @CapacitorPlugin(name="ApkInstaller")
+          public class ApkInstallerPlugin extends Plugin {
+
+            private final ExecutorService executor = Executors.newSingleThreadExecutor();
+
+            @PluginMethod
+            public void downloadAndInstall(PluginCall call) {
+              String url = call.getString("url");
+              String fileName = call.getString("fileName", "forgeapk-build.apk");
+
+              if (url == null || url.isEmpty()) {
+                call.reject("Missing APK URL");
+                return;
+              }
+
+              if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+                  !getContext().getPackageManager().canRequestPackageInstalls()) {
+                Intent settingsIntent = new Intent(
+                  Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                  Uri.parse("package:" + getContext().getPackageName())
+                );
+                settingsIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(settingsIntent);
+
+                JSObject result = new JSObject();
+                result.put("needsPermission", true);
+                result.put("message", "Enable Allow from this source, then tap Download & Install again.");
+                call.resolve(result);
+                return;
+              }
+
+              File dir = getContext().getExternalFilesDir("apk");
+              if (dir == null) {
+                call.reject("App storage unavailable");
+                return;
+              }
+              if (!dir.exists()) dir.mkdirs();
+
+              File apk = new File(dir, fileName.replaceAll("[^a-zA-Z0-9._-]", "-"));
+
+              executor.execute(() -> {
+                HttpURLConnection connection = null;
+                try {
+                  URL current = new URL(url);
+                  int redirects = 0;
+
+                  while (true) {
+                    connection = (HttpURLConnection) current.openConnection();
+                    connection.setInstanceFollowRedirects(false);
+                    connection.setConnectTimeout(20000);
+                    connection.setReadTimeout(120000);
+                    connection.setRequestProperty("User-Agent", "ForgeAPK-Studio");
+                    int code = connection.getResponseCode();
+
+                    if (code >= 300 && code < 400 && redirects < 8) {
+                      String location = connection.getHeaderField("Location");
+                      connection.disconnect();
+                      if (location == null) throw new IOException("Redirect without location");
+                      current = new URL(current, location);
+                      redirects++;
+                      continue;
+                    }
+
+                    if (code < 200 || code >= 300) {
+                      throw new IOException("Download failed: HTTP " + code);
+                    }
+                    break;
+                  }
+
+                  try (InputStream in = new BufferedInputStream(connection.getInputStream());
+                       OutputStream out = new BufferedOutputStream(new FileOutputStream(apk))) {
+                    byte[] buffer = new byte[8192];
+                    int n;
+                    while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+                  } finally {
+                    if (connection != null) connection.disconnect();
+                  }
+
+                  getActivity().runOnUiThread(() -> {
+                    try {
+                      Uri uri = FileProvider.getUriForFile(
+                        getContext(),
+                        getContext().getPackageName() + ".fileprovider",
+                        apk
+                      );
+
+                      Intent install = new Intent(Intent.ACTION_VIEW);
+                      install.setDataAndType(uri, "application/vnd.android.package-archive");
+                      install.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                      install.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                      getContext().startActivity(install);
+
+                      JSObject result = new JSObject();
+                      result.put("started", true);
+                      result.put("path", apk.getAbsolutePath());
+                      call.resolve(result);
+                    } catch (Exception e) {
+                      call.reject("Could not open Android installer: " + e.getMessage(), e);
+                    }
+                  });
+
+                } catch (Exception e) {
+                  if (connection != null) connection.disconnect();
+                  call.reject("APK download failed: " + e.getMessage(), e);
+                }
+              });
+            }
+          }
+          JAVA
+
+
+      - name: Add native media library
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ENABLED="$(node -e "const m=require('./buildsrc/meta.json'); const p=m.permissions||[]; console.log((p.includes('photos')||p.includes('audio')||p.includes('video'))?'yes':'no')")"
+          if [ "$ENABLED" != "yes" ]; then
+            echo "Native media library not requested."
+            exit 0
+          fi
+
+          APP_DIR="capapp/android/app/src/main/java/$(echo "$APP_ID" | tr '.' '/')"
+          mkdir -p "$APP_DIR"
+
+          cat > "$APP_DIR/MediaLibraryPlugin.java" <<JAVA
+          package $APP_ID;
+
+          import android.Manifest;
+          import android.content.ContentResolver;
+          import android.content.ContentUris;
+          import android.database.Cursor;
+          import android.graphics.Bitmap;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.provider.MediaStore;
+          import android.util.Base64;
+          import android.util.Size;
+
+          import com.getcapacitor.JSArray;
+          import com.getcapacitor.JSObject;
+          import com.getcapacitor.Plugin;
+          import com.getcapacitor.PluginCall;
+          import com.getcapacitor.PluginMethod;
+          import com.getcapacitor.annotation.CapacitorPlugin;
+          import com.getcapacitor.annotation.Permission;
+          import com.getcapacitor.annotation.PermissionCallback;
+
+          import java.io.ByteArrayOutputStream;
+          import java.io.File;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
+
+          @CapacitorPlugin(
+            name="MediaLibrary",
+            permissions={
+              @Permission(alias="images", strings={Manifest.permission.READ_MEDIA_IMAGES}),
+              @Permission(alias="video", strings={Manifest.permission.READ_MEDIA_VIDEO}),
+              @Permission(alias="audio", strings={Manifest.permission.READ_MEDIA_AUDIO}),
+              @Permission(alias="legacy", strings={Manifest.permission.READ_EXTERNAL_STORAGE})
+            }
+          )
+          public class MediaLibraryPlugin extends Plugin {
+
+            @PluginMethod
+            public void requestAndScan(PluginCall call){
+              if(Build.VERSION.SDK_INT >= 33){
+                requestPermissionForAliases(
+                  new String[]{"images","video","audio"},
+                  call,
+                  "permissionCallback"
+                );
+              }else{
+                requestPermissionForAlias("legacy",call,"permissionCallback");
+              }
+            }
+
+            @PermissionCallback
+            private void permissionCallback(PluginCall call){
+              scan(call);
+            }
+
+            @PluginMethod
+            public void scan(PluginCall call){
+              try{
+                JSArray items=new JSArray();
+                ContentResolver cr=getContext().getContentResolver();
+
+                query(cr,MediaStore.Video.Media.EXTERNAL_CONTENT_URI,"video",items);
+                query(cr,MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,"audio",items);
+                query(cr,MediaStore.Images.Media.EXTERNAL_CONTENT_URI,"image",items);
+
+                JSObject out=new JSObject();
+                out.put("items",items);
+                call.resolve(out);
+              }catch(Exception e){
+                call.reject("Media scan failed: "+e.getMessage(),e);
+              }
+            }
+
+            private void query(ContentResolver cr, Uri base, String type, JSArray items){
+              String[] projection;
+              if("image".equals(type)){
+                projection=new String[]{
+                  MediaStore.MediaColumns._ID,
+                  MediaStore.MediaColumns.DISPLAY_NAME,
+                  MediaStore.MediaColumns.SIZE,
+                  MediaStore.MediaColumns.DATE_ADDED
+                };
+              }else{
+                projection=new String[]{
+                  MediaStore.MediaColumns._ID,
+                  MediaStore.MediaColumns.DISPLAY_NAME,
+                  MediaStore.MediaColumns.SIZE,
+                  MediaStore.MediaColumns.DATE_ADDED,
+                  MediaStore.MediaColumns.DURATION
+                };
+              }
+
+              try(Cursor c=cr.query(
+                base,
+                projection,
+                null,
+                null,
+                MediaStore.MediaColumns.DATE_ADDED+" DESC"
+              )){
+                if(c==null) return;
+
+                int idI=c.getColumnIndexOrThrow(MediaStore.MediaColumns._ID);
+                int nameI=c.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME);
+                int sizeI=c.getColumnIndexOrThrow(MediaStore.MediaColumns.SIZE);
+                int dateI=c.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED);
+                int durI="image".equals(type) ? -1 : c.getColumnIndex(MediaStore.MediaColumns.DURATION);
+
+                int count=0;
+                while(c.moveToNext() && count<250){
+                  long id=c.getLong(idI);
+                  Uri uri=ContentUris.withAppendedId(base,id);
+
+                  JSObject o=new JSObject();
+                  o.put("type",type);
+                  o.put("name",c.getString(nameI));
+                  o.put("size",c.getLong(sizeI));
+                  o.put("dateAdded",c.getLong(dateI));
+                  o.put("duration",durI>=0 ? c.getLong(durI) : 0);
+                  o.put("uri",uri.toString());
+                  items.put(o);
+                  count++;
+                }
+              }catch(Exception ignored){}
+            }
+
+            @PluginMethod
+            public void thumbnail(PluginCall call){
+              String uriText=call.getString("uri");
+              if(uriText==null){call.reject("Missing uri");return;}
+
+              try{
+                if(Build.VERSION.SDK_INT < 29){
+                  JSObject out=new JSObject();
+                  out.put("dataUrl","");
+                  call.resolve(out);
+                  return;
+                }
+
+                Bitmap bmp=getContext().getContentResolver().loadThumbnail(
+                  Uri.parse(uriText),
+                  new Size(320,320),
+                  null
+                );
+
+                ByteArrayOutputStream bos=new ByteArrayOutputStream();
+                bmp.compress(Bitmap.CompressFormat.JPEG,72,bos);
+                String b64=Base64.encodeToString(bos.toByteArray(),Base64.NO_WRAP);
+
+                JSObject out=new JSObject();
+                out.put("dataUrl","data:image/jpeg;base64,"+b64);
+                call.resolve(out);
+              }catch(Exception e){
+                JSObject out=new JSObject();
+                out.put("dataUrl","");
+                call.resolve(out);
+              }
+            }
+
+            @PluginMethod
+            public void materialize(PluginCall call){
+              String uriText=call.getString("uri");
+              String name=call.getString("name","media.bin");
+              if(uriText==null){call.reject("Missing uri");return;}
+
+              try{
+                File dir=new File(getContext().getCacheDir(),"forge_media");
+                if(!dir.exists()) dir.mkdirs();
+
+                String safe=name.replaceAll("[^a-zA-Z0-9._-]","_");
+                File outFile=new File(dir,System.currentTimeMillis()+"_"+safe);
+
+                try(InputStream in=getContext().getContentResolver().openInputStream(Uri.parse(uriText));
+                    FileOutputStream out=new FileOutputStream(outFile)){
+                  if(in==null) throw new Exception("Cannot open media");
+                  byte[] buf=new byte[65536];
+                  int n;
+                  while((n=in.read(buf))>0) out.write(buf,0,n);
+                }
+
+                JSObject out=new JSObject();
+                out.put("fileUri",Uri.fromFile(outFile).toString());
+                call.resolve(out);
+              }catch(Exception e){
+                call.reject("Could not prepare media: "+e.getMessage(),e);
+              }
+            }
+          }
+          JAVA
+
+      - name: Configure native plugin registration
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          APP_DIR="capapp/android/app/src/main/java/$(echo "$APP_ID" | tr '.' '/')"
+          mkdir -p "$APP_DIR"
+
+          BG="$(node -e "const m=require('./buildsrc/meta.json'); console.log((m.permissions||[]).includes('backgroundAudio')?'yes':'no')")"
+          INSTALLER="$(node -e "const m=require('./buildsrc/meta.json'); console.log((m.permissions||[]).includes('installer')?'yes':'no')")"
+          MEDIA="$(node -e "const m=require('./buildsrc/meta.json'); const p=m.permissions||[]; console.log((p.includes('photos')||p.includes('audio')||p.includes('video'))?'yes':'no')")"
+
+          {
+            echo "package $APP_ID;"
+            echo
+            echo "import android.os.Bundle;"
+            echo "import com.getcapacitor.BridgeActivity;"
+            echo
+            echo "public class MainActivity extends BridgeActivity {"
+            echo "  @Override"
+            echo "  public void onCreate(Bundle savedInstanceState) {"
+            if [ "$BG" = "yes" ]; then
+              echo "    registerPlugin(BackgroundAudioPlugin.class);"
+            fi
+            if [ "$INSTALLER" = "yes" ]; then
+              echo "    registerPlugin(ApkInstallerPlugin.class);"
+            fi
+            if [ "$MEDIA" = "yes" ]; then
+              echo "    registerPlugin(MediaLibraryPlugin.class);"
+            fi
+            echo "    super.onCreate(savedInstanceState);"
+            echo "  }"
+            echo "}"
+          } > "$APP_DIR/MainActivity.java"
+
+      - name: Configure stable personal signing
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo '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' | base64 -d > capapp/android/app/forgeapk-dev.jks
+
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'capapp/android/app/build.gradle';
+          let s = fs.readFileSync(path, 'utf8');
+
+          const versionCode = Math.floor(Date.now()/1000);
+          const versionName = '1.0.' + versionCode;
+
+          s = s.replace(/versionCode\s+\d+/, 'versionCode ' + versionCode);
+          s = s.replace(/versionName\s+["'][^"']+["']/, 'versionName "' + versionName + '"');
+
+          if (!s.includes('signingConfigs {')) {
+            s = s.replace(
+              /\n\s*buildTypes\s*\{/,
+              `
+
+              signingConfigs {
+                  forgeapk {
+                      storeFile file("forgeapk-dev.jks")
+                      storePassword "ForgeAPKDev2026!"
+                      keyAlias "forgeapk"
+                      keyPassword "ForgeAPKDev2026!"
+                  }
+              }
+
+              buildTypes {`
+            );
+          }
+
+          s = s.replace(
+            /buildTypes\s*\{/,
+            `buildTypes {
+                  debug {
+                      signingConfig signingConfigs.forgeapk
+                  }`
+          );
+
+          s = s.replace(
+            /release\s*\{/,
+            `release {
+                      signingConfig signingConfigs.forgeapk`
+          );
+
+          fs.writeFileSync(path, s);
+          console.log('Stable signing configured with versionCode', versionCode);
           NODE
 
       - name: Generate Android icon
@@ -363,4 +888,3 @@ jobs:
           path: output/*.apk
           if-no-files-found: error
           retention-days: 3
-          
