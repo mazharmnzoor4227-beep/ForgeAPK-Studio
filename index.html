@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Code2APK Free</title>
+  <style>
+    :root{font-family:Inter,system-ui,Arial,sans-serif;color-scheme:dark}
+    *{box-sizing:border-box}
+    body{margin:0;color:#fff;min-height:100vh;background:radial-gradient(circle at 15% 0%,rgba(124,92,255,.18),transparent 30%),radial-gradient(circle at 90% 0%,rgba(39,211,162,.10),transparent 24%),linear-gradient(180deg,#080a0e,#05070a)}
+    .wrap{max-width:980px;margin:auto;padding:calc(22px + env(safe-area-inset-top)) 18px calc(32px + env(safe-area-inset-bottom))}
+    .top{display:flex;align-items:center;gap:13px;margin:4px 0 20px;padding:14px;border:1px solid rgba(255,255,255,.06);background:rgba(15,19,25,.78);backdrop-filter:blur(18px);border-radius:22px;box-shadow:0 18px 50px rgba(0,0,0,.26)}
+    .logo{width:48px;height:48px;border-radius:16px;background:linear-gradient(145deg,#7c5cff,#9e87ff 55%,#27d3a2);color:#fff;display:grid;place-items:center;font-weight:950;font-size:20px;box-shadow:0 10px 28px rgba(124,92,255,.28)}
+    h1{font-size:26px;margin:0}.sub{color:#9da4ae;margin-top:4px}
+    .card{background:linear-gradient(180deg,rgba(19,24,31,.96),rgba(12,16,21,.97));border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:18px;margin:14px 0;box-shadow:0 16px 45px rgba(0,0,0,.22)}
+    .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+    button,.btn{border:0;border-radius:12px;padding:12px 16px;font-weight:700;cursor:pointer}
+    .primary{background:#fff;color:#111}.secondary{background:#222831;color:#fff}
+    input,textarea{width:100%;background:#0d1116;border:1px solid #2a3139;color:#fff;border-radius:12px;padding:12px}
+    textarea{min-height:180px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;resize:vertical}
+    label{display:block;margin:10px 0 7px;color:#c6cbd2;font-size:14px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .hidden{display:none}
+    .drop{border:1px dashed #39424c;border-radius:14px;padding:22px;text-align:center}
+    .status{white-space:pre-wrap;background:#090c10;border-radius:12px;padding:14px;min-height:110px;color:#b8c0ca}
+    .ok{color:#7ee787}.err{color:#ff7b72}.muted{color:#8b949e;font-size:13px}
+    .big{width:100%;font-size:16px;padding:15px;margin-top:12px}
+    .permGrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:10px}
+    .perm{display:flex;align-items:flex-start;gap:10px;background:#0f1318;border:1px solid #2a3139;border-radius:14px;padding:12px}
+    .perm input{width:auto;margin-top:3px}
+    .perm b{display:block;font-size:14px}.perm span{display:block;color:#8b949e;font-size:12px;margin-top:3px;line-height:1.35}
+    .pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#202731;color:#cbd3dd;font-size:11px;margin:3px 4px 0 0}
+    @media(max-width:700px){.permGrid{grid-template-columns:1fr}}
+    .history{display:grid;gap:10px}.item{display:flex;justify-content:space-between;gap:12px;align-items:center;background:#0f1318;border-radius:12px;padding:12px}
+    .previewWrap{background:#080b0f;border-radius:18px;padding:16px;display:grid;place-items:center}
+    .phone{width:min(390px,100%);height:720px;border:10px solid #222831;border-radius:34px;overflow:hidden;background:#fff}
+    .phone iframe{width:100%;height:100%;border:0;background:#fff}
+    @media(max-width:700px){.grid{grid-template-columns:1fr}.wrap{padding:14px}.phone{height:68vh}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top"><div class="logo">⌘</div><div><h1>ForgeAPK Studio</h1><div class="sub">Build web, media and native-feature Android apps</div></div></div>
+
+  <div class="card">
+    <b>One-time GitHub setup</b>
+    <label>GitHub owner / username</label>
+    <input id="owner" placeholder="your-github-username">
+    <label>Repository name</label>
+    <input id="repo" placeholder="code2apk-builder">
+    <label>GitHub fine-grained token</label>
+    <input id="token" type="password" placeholder="Token with Contents + Actions access">
+    <div class="muted">Stored only in this browser. Do not share your token.</div>
+    <button class="secondary" style="margin-top:10px" onclick="saveSettings()">Save setup</button>
+  </div>
+
+  <div class="card">
+    <div class="tabs">
+      <button id="tabPaste" class="primary" onclick="showMode('paste')">Paste Code</button>
+      <button id="tabZip" class="secondary" onclick="showMode('zip')">Upload ZIP</button>
+    </div>
+
+    <div id="pasteMode">
+      <label>Complete HTML (you can include CSS + JS inside it)</label>
+      <textarea id="html" placeholder="Paste a complete HTML file here..."></textarea>
+      <div class="grid">
+        <div><label>Optional CSS</label><textarea id="css" style="min-height:110px"></textarea></div>
+        <div><label>Optional JavaScript</label><textarea id="js" style="min-height:110px"></textarea></div>
+      </div>
+    </div>
+
+    <div id="zipMode" class="hidden">
+      <div class="drop">
+        <label>Upload Web App ZIP (index.html can be in root, www/, dist/, build/, or one parent folder)</label>
+        <input id="zipFile" type="file" accept=".zip">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="grid">
+      <div><label>App name</label><input id="appName" placeholder="My App"></div>
+      <div><label>Package ID</label><input id="appId" placeholder="com.example.myapp"></div>
+    </div>
+    <label>App icon (PNG/JPG, preferably square 1024×1024)</label>
+    <input id="icon" type="file" accept="image/png,image/jpeg">
+    <div class="grid" style="margin-top:12px">
+      <button class="secondary big" onclick="previewApp()">PREVIEW APP</button>
+      <button class="primary big" onclick="buildApk()">GENERATE APK</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>Android Features & Permissions</b>
+    <div class="muted" style="margin-top:6px">Select only the device features your app actually needs. Android will request permission when the app uses that feature.</div>
+
+    <div class="permGrid">
+      <label class="perm"><input class="permCheck" type="checkbox" value="camera"><div><b>Camera</b><span>Photos, QR/barcode camera, product scanning</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="microphone"><div><b>Microphone</b><span>Voice input, audio recording, assistant features</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="location"><div><b>Location</b><span>GPS and location-based features</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="notifications"><div><b>Notifications</b><span>Local app reminders and notifications</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="files"><div><b>Files</b><span>Save/read files in the app's device storage</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="photos"><div><b>Photos / Gallery</b><span>Pick and display photos from the phone</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="audio"><div><b>Music / Audio</b><span>Choose and play local audio files</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="video"><div><b>Video / Media</b><span>Choose and play local video files</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="backgroundAudio"><div><b>Background Audio</b><span>Keep music playing while minimized or screen is locked</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="haptics"><div><b>Vibration / Haptics</b><span>Button vibration and feedback</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="share"><div><b>Share</b><span>Open Android share sheet</span></div></label>
+      <label class="perm"><input class="permCheck" type="checkbox" value="network"><div><b>Network Status</b><span>Detect online/offline connection state</span></div></label>
+    </div>
+
+    <div style="margin-top:12px">
+      <span class="pill">Camera API</span><span class="pill">Geolocation</span><span class="pill">Filesystem</span>
+      <span class="pill">Local Notifications</span><span class="pill">Share</span><span class="pill">Haptics</span><span class="pill">Device</span><span class="pill">Photos</span><span class="pill">Audio</span><span class="pill">Video</span>
+    </div>
+  </div>
+
+  <div id="previewCard" class="card hidden">
+    <b>App Preview</b>
+    <div class="previewWrap" style="margin-top:10px"><div class="phone"><iframe id="previewFrame" sandbox="allow-scripts allow-forms allow-modals"></iframe></div></div>
+  </div>
+
+  <div class="card">
+    <b>Build status</b>
+    <div id="status" class="status" style="margin-top:10px">Ready.</div>
+    <div id="downloadArea" class="hidden" style="margin-top:12px">
+      <button class="primary" onclick="downloadApk()">Download APK</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <b>Recent builds</b>
+    <div id="history" class="history" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+let mode='paste', currentRun=null, currentBuildId=null, currentDownloadUrl=null;
+
+function setStatus(t, cls=''){ const el=document.getElementById('status'); el.textContent=t; el.className='status '+cls; }
+function showMode(m){ mode=m; pasteMode.classList.toggle('hidden',m!=='paste'); zipMode.classList.toggle('hidden',m!=='zip'); tabPaste.className=m==='paste'?'primary':'secondary'; tabZip.className=m==='zip'?'primary':'secondary'; }
+function saveSettings(){ const s={owner:owner.value.trim(),repo:repo.value.trim(),token:token.value.trim()}; localStorage.setItem('code2apk_settings',JSON.stringify(s)); setStatus('GitHub setup saved in this browser.','ok'); }
+function loadSettings(){ try{const s=JSON.parse(localStorage.getItem('code2apk_settings')||'{}'); owner.value=s.owner||''; repo.value=s.repo||''; token.value=s.token||'';}catch{} renderHistory(); }
+function slug(s){return s.toLowerCase().replace(/[^a-z0-9]+/g,'').slice(0,40)||'myapp'}
+function validAppId(s){return /^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/.test(s)}
+async function gh(path, opts={}){ const t=token.value.trim(); if(!t) throw new Error('GitHub token missing'); const res=await fetch('https://api.github.com'+path,{...opts,headers:{'Accept':'application/vnd.github+json','Authorization':'Bearer '+t,'X-GitHub-Api-Version':'2022-11-28',...(opts.headers||{})}}); if(!res.ok){let txt=await res.text();throw new Error('GitHub '+res.status+': '+txt.slice(0,300))} if(res.status===204)return null; return res.json(); }
+
+
+function selectedPermissions(){
+  return [...document.querySelectorAll('.permCheck:checked')].map(x=>x.value);
+}
+
+function composeHtml(){
+  let h=html.value.trim(); const c=css.value, j=js.value;
+  if(!h) throw new Error('Paste HTML code first');
+  if(!/<html[\s>]/i.test(h)){
+    h='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">'+(c?'<style>'+c+'</style>':'')+'</head><body>'+h+(j?'<script>'+j+'<\/script>':'')+'</body></html>';
+  } else {
+    if(c) h=h.replace(/<\/head>/i,'<style>'+c+'</style></head>');
+    if(j) h=h.replace(/<\/body>/i,'<script>'+j+'<\/script></body>');
+  }
+  return h;
+}
+
+async function previewApp(){
+  try{
+    let h='';
+    if(mode==='paste') h=composeHtml();
+    else{
+      const f=zipFile.files[0]; if(!f) throw new Error('Choose a ZIP file first');
+      const z=await JSZip.loadAsync(f);
+      const entry=Object.entries(z.files).find(([n,o])=>!o.dir && /(^|\/)index\.html$/i.test(n));
+      if(!entry) throw new Error('No index.html found in ZIP');
+      h=await entry[1].async('text');
+    }
+    previewFrame.srcdoc=h;
+    previewCard.classList.remove('hidden');
+    previewCard.scrollIntoView({behavior:'smooth'});
+  }catch(e){ setStatus('ERROR: '+e.message,'err'); }
+}
+
+async function createPayload(){
+  const zip=new JSZip();
+  if(mode==='zip'){
+    const f=zipFile.files[0]; if(!f) throw new Error('Choose a ZIP file');
+    if(f.size > 90*1024*1024) throw new Error('ZIP is too large. Keep the source ZIP under about 90 MB.');
+
+    const inzip=await JSZip.loadAsync(f);
+    const files=Object.entries(inzip.files).filter(([n,o])=>!o.dir && !n.includes('..') && !n.startsWith('__MACOSX/'));
+
+    const indexCandidates=files
+      .map(([n,o])=>[n.replace(/^\/+/,''),o])
+      .filter(([n])=>/(^|\/)index\.html$/i.test(n));
+
+    if(!indexCandidates.length) throw new Error('No index.html found in uploaded ZIP');
+
+    // Prefer root/www/dist/build index.html; otherwise use the shallowest index.html.
+    indexCandidates.sort((a,b)=>{
+      const rank=n=>{
+        if(/^index\.html$/i.test(n)) return 0;
+        if(/^(www|dist|build)\/index\.html$/i.test(n)) return 1;
+        return n.split('/').length;
+      };
+      return rank(a[0])-rank(b[0]);
+    });
+
+    const chosen=indexCandidates[0][0];
+    const root=chosen.replace(/index\.html$/i,'');
+    for(const [rawName,obj] of files){
+      const name=rawName.replace(/^\/+/,'');
+      if(root && !name.startsWith(root)) continue;
+      let rel=root ? name.slice(root.length) : name;
+      rel=rel.replace(/^\/+/,'');
+      if(!rel) continue;
+      const data=await obj.async('uint8array');
+      zip.file('www/'+rel,data);
+    }
+  } else {
+    zip.file('www/index.html',composeHtml());
+  }
+
+  // Native bridge helper is injected for medium-level Android features.
+  const bridge = `
+(function(){
+  const P=()=>window.Capacitor&&window.Capacitor.Plugins?window.Capacitor.Plugins:{};
+  window.NativeBridge={
+    isNative:()=>!!(window.Capacitor&&window.Capacitor.isNativePlatform&&window.Capacitor.isNativePlatform()),
+    camera:async()=>{const p=P();if(!p.Camera)throw new Error('Camera plugin unavailable');return p.Camera.getPhoto({quality:85,resultType:'uri',source:'CAMERA'});},
+    location:async()=>{const p=P();if(!p.Geolocation)throw new Error('Geolocation unavailable');await p.Geolocation.requestPermissions();return p.Geolocation.getCurrentPosition({enableHighAccuracy:true});},
+    notify:async(title,body)=>{const p=P();if(!p.LocalNotifications)throw new Error('Notifications unavailable');await p.LocalNotifications.requestPermissions();return p.LocalNotifications.schedule({notifications:[{title:title||'Notification',body:body||'',id:Date.now()%2147483647,schedule:{at:new Date(Date.now()+1000)}}]});},
+    share:async(title,text,url)=>{const p=P();if(!p.Share)throw new Error('Share unavailable');return p.Share.share({title:title||'',text:text||'',url:url||''});},
+    vibrate:async()=>{const p=P();if(!p.Haptics)throw new Error('Haptics unavailable');return p.Haptics.impact({style:'MEDIUM'});},
+    network:async()=>{const p=P();if(!p.Network)throw new Error('Network plugin unavailable');return p.Network.getStatus();},
+    device:async()=>{const p=P();if(!p.Device)throw new Error('Device plugin unavailable');return p.Device.getInfo();},
+    writeTextFile:async(name,text)=>{const p=P();if(!p.Filesystem)throw new Error('Filesystem unavailable');return p.Filesystem.writeFile({path:name||'file.txt',data:text||'',directory:'DOCUMENTS',encoding:'utf8'});},
+    pickImages:async()=>{const p=P();if(p.Camera&&p.Camera.pickImages)return p.Camera.pickImages({quality:90,limit:0});throw new Error('Gallery picker unavailable');},
+    pickLocalFile:(accept='*/*')=>new Promise((resolve,reject)=>{
+      try{
+        const i=document.createElement('input');i.type='file';i.accept=accept;
+        i.onchange=()=>{const f=i.files&&i.files[0];if(!f)return resolve(null);resolve({file:f,url:URL.createObjectURL(f),name:f.name,type:f.type,size:f.size});};
+        i.click();
+      }catch(e){reject(e)}
+    }),
+    pickAudio:()=>window.NativeBridge.pickLocalFile('audio/*'),
+    pickVideo:()=>window.NativeBridge.pickLocalFile('video/*'),
+    pickPhoto:()=>window.NativeBridge.pickLocalFile('image/*'),
+    bgAudioPlay:async(url,title='Now Playing')=>{
+      const p=P(); if(!p.BackgroundAudio) throw new Error('Background audio unavailable');
+      return p.BackgroundAudio.play({url,title});
+    },
+    bgAudioPause:async()=>{const p=P();if(!p.BackgroundAudio)throw new Error('Background audio unavailable');return p.BackgroundAudio.pause();},
+    bgAudioResume:async()=>{const p=P();if(!p.BackgroundAudio)throw new Error('Background audio unavailable');return p.BackgroundAudio.resume();},
+    bgAudioStop:async()=>{const p=P();if(!p.BackgroundAudio)throw new Error('Background audio unavailable');return p.BackgroundAudio.stop();}
+  };
+})();`;
+  zip.file('www/native-bridge.js',bridge);
+
+  // Add bridge script to uploaded/pasted index.html.
+  const idx=zip.file('www/index.html');
+  if(idx){
+    let txt=await idx.async('text');
+    if(!/native-bridge\.js/i.test(txt)){
+      txt=txt.replace(/<\/body>/i,'<script src="native-bridge.js"></script></body>');
+      if(!/<\/body>/i.test(txt)) txt += '<script src="native-bridge.js"></script>';
+      zip.file('www/index.html',txt);
+    }
+  }
+
+  const iconFile=icon.files[0];
+  if(iconFile) zip.file('assets/icon.'+(iconFile.type.includes('jpeg')?'jpg':'png'), await iconFile.arrayBuffer());
+
+  zip.file('meta.json',JSON.stringify({
+    appName:appName.value.trim(),
+    appId:appId.value.trim(),
+    permissions:selectedPermissions(),
+    builderVersion:'3-advanced'
+  },null,2));
+
+  return zip.generateAsync({type:'base64',compression:'DEFLATE',compressionOptions:{level:5}});
+}
+
+async function putJob(buildId,b64){
+  const path=`jobs/${buildId}.zip`;
+  return gh(`/repos/${owner.value.trim()}/${repo.value.trim()}/contents/${encodeURIComponent(path).replace(/%2F/g,'/')}`,{
+    method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message:`Code2APK build ${buildId}`,content:b64})
+  });
+}
+async function dispatch(buildId){
+  return gh(`/repos/${owner.value.trim()}/${repo.value.trim()}/actions/workflows/build-apk.yml/dispatches`,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ref:'main',inputs:{build_id:buildId}})
+  });
+}
+async function findRun(buildId){
+  const data=await gh(`/repos/${owner.value.trim()}/${repo.value.trim()}/actions/workflows/build-apk.yml/runs?per_page=20`);
+  return data.workflow_runs.find(r=>r.display_title===`Code2APK-${buildId}`)||null;
+}
+async function waitForPublishedApk(buildId){
+  const url=`https://${owner.value.trim()}.github.io/${repo.value.trim()}/downloads/app-${buildId}.apk`;
+  for(let i=0;i<24;i++){
+    try{
+      const r=await fetch(url,{method:'HEAD',cache:'no-store'});
+      if(r.ok) return url;
+    }catch{}
+    await new Promise(r=>setTimeout(r,5000));
+  }
+  return url;
+}
+async function poll(buildId){
+  setStatus('Build queued on GitHub Actions…');
+  for(let i=0;i<90;i++){
+    await new Promise(r=>setTimeout(r,5000));
+    const run=await findRun(buildId);
+    if(!run){setStatus('Waiting for GitHub runner…');continue}
+    currentRun=run;
+    if(run.status!=='completed'){setStatus(`Build status: ${run.status}\nGitHub Actions is creating the Android project, permissions, native plugins and APK…`);continue}
+    if(run.conclusion!=='success') throw new Error('Android build failed. Open GitHub Actions to see the build log.');
+    setStatus('Build finished. Publishing direct APK download…');
+    currentDownloadUrl=await waitForPublishedApk(buildId);
+    setStatus('BUILD SUCCESSFUL ✅\nYour Android APK is ready.','ok');
+    downloadArea.classList.remove('hidden');
+    addHistory({name:appName.value.trim(),buildId,time:new Date().toISOString(),url:currentDownloadUrl});
+    return;
+  }
+  throw new Error('Timed out waiting for build. Check GitHub Actions.');
+}
+async function buildApk(){
+  try{
+    downloadArea.classList.add('hidden');
+    const name=appName.value.trim(); if(!name) throw new Error('Enter app name');
+    if(!appId.value.trim()) appId.value='com.code2apk.'+slug(name);
+    if(!validAppId(appId.value.trim())) throw new Error('Invalid package ID, example: com.example.myapp');
+    if(!owner.value.trim()||!repo.value.trim()||!token.value.trim()) throw new Error('Complete the one-time GitHub setup first');
+    saveSettings();
+    const id=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+    currentBuildId=id;
+    setStatus('Preparing your web project…');
+    const b64=await createPayload();
+    if(b64.length>120*1024*1024) throw new Error('Project is too large for this free GitHub upload method. Keep the source ZIP around 90 MB or less.');
+    setStatus('Uploading build job to GitHub…');
+    await putJob(id,b64);
+    setStatus('Starting Android build…');
+    await dispatch(id);
+    await poll(id);
+  }catch(e){setStatus('ERROR: '+e.message,'err')}
+}
+function downloadApk(){
+  if(!currentDownloadUrl){ setStatus('ERROR: APK download URL is not ready yet.','err'); return; }
+  const a=document.createElement('a');
+  a.href=currentDownloadUrl;
+  a.download=(appName.value.trim()||'app').replace(/[^a-z0-9_-]+/gi,'-')+'.apk';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+function addHistory(x){const arr=JSON.parse(localStorage.getItem('code2apk_history')||'[]');arr.unshift(x);localStorage.setItem('code2apk_history',JSON.stringify(arr.slice(0,10)));renderHistory()}
+function renderHistory(){const arr=JSON.parse(localStorage.getItem('code2apk_history')||'[]');history.innerHTML=arr.length?arr.map(x=>`<div class="item"><div><b>${x.name}</b><div class="muted">${new Date(x.time).toLocaleString()}</div></div>${x.url?`<a class="btn primary" href="${x.url}">Download</a>`:''}</div>`).join(''):'<div class="muted">No builds yet.</div>'}
+loadSettings();
+</script>
+</body>
+</html>
