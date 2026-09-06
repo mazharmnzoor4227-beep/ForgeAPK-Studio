@@ -1,0 +1,648 @@
+name: Build APK
+run-name: Code2APK-${{ inputs.build_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: Build job id
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Verify build job
+        shell: bash
+        run: |
+          set -euo pipefail
+          JOB="jobs/${{ inputs.build_id }}.zip"
+          test -f "$JOB" || { echo "Build job not found: $JOB"; exit 1; }
+          ls -lh "$JOB"
+
+      - name: Extract project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf buildsrc
+          mkdir -p buildsrc
+          unzip -q "jobs/${{ inputs.build_id }}.zip" -d buildsrc
+          test -f buildsrc/meta.json || { echo "ERROR: meta.json missing"; exit 1; }
+          test -f buildsrc/www/index.html || { echo "ERROR: www/index.html missing"; exit 1; }
+          find buildsrc -maxdepth 3 -type f | sort | head -200
+
+      - name: Read app metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_NAME="$(node -p "require('./buildsrc/meta.json').appName")"
+          APP_ID="$(node -p "require('./buildsrc/meta.json').appId")"
+          echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
+          echo "APP_ID=$APP_ID" >> "$GITHUB_ENV"
+          node -e "const m=require('./buildsrc/meta.json'); console.log('Permissions:',m.permissions||[])"
+
+      - name: Create Capacitor Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf capapp
+          mkdir -p capapp
+          cd capapp
+
+          npm init -y
+
+          npm install \
+            @capacitor/core \
+            @capacitor/cli \
+            @capacitor/android \
+            @capacitor/assets \
+            @capacitor/camera \
+            @capacitor/geolocation \
+            @capacitor/filesystem \
+            @capacitor/local-notifications \
+            @capacitor/share \
+            @capacitor/haptics \
+            @capacitor/device \
+            @capacitor/network \
+            @capacitor/status-bar
+
+          cp -R ../buildsrc/www ./www
+          mkdir -p assets
+          [ -f ../buildsrc/assets/icon.png ] && cp ../buildsrc/assets/icon.png assets/icon.png || true
+          [ -f ../buildsrc/assets/icon.jpg ] && cp ../buildsrc/assets/icon.jpg assets/icon.jpg || true
+          [ -f ../buildsrc/assets/icon.jpeg ] && cp ../buildsrc/assets/icon.jpeg assets/icon.jpeg || true
+
+          cat > capacitor.config.json <<EOF
+          {
+            "appId": "$APP_ID",
+            "appName": "$APP_NAME",
+            "webDir": "www",
+            "android": {
+              "allowMixedContent": true,
+              "webContentsDebuggingEnabled": false
+            },
+            "plugins": {
+              "StatusBar": {
+                "overlaysWebView": false
+              }
+            }
+          }
+          EOF
+
+          npx cap add android
+          npx cap sync android
+
+      - name: Add requested Android permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          MANIFEST="capapp/android/app/src/main/AndroidManifest.xml"
+
+          node <<'NODE'
+          const fs=require('fs');
+          const meta=require('./buildsrc/meta.json');
+          const wanted=new Set(meta.permissions||[]);
+          const path='capapp/android/app/src/main/AndroidManifest.xml';
+          let xml=fs.readFileSync(path,'utf8');
+
+          const perms=['android.permission.INTERNET'];
+
+          if(wanted.has('camera')) perms.push('android.permission.CAMERA');
+          if(wanted.has('microphone')) perms.push('android.permission.RECORD_AUDIO');
+
+          if(wanted.has('location')){
+            perms.push('android.permission.ACCESS_FINE_LOCATION');
+            perms.push('android.permission.ACCESS_COARSE_LOCATION');
+          }
+
+          if(wanted.has('notifications')) perms.push('android.permission.POST_NOTIFICATIONS');
+          if(wanted.has('haptics')) perms.push('android.permission.VIBRATE');
+          if(wanted.has('photos')) perms.push('android.permission.READ_MEDIA_IMAGES');
+          if(wanted.has('audio')) perms.push('android.permission.READ_MEDIA_AUDIO');
+          if(wanted.has('video')) perms.push('android.permission.READ_MEDIA_VIDEO');
+
+          if(wanted.has('backgroundAudio')){
+            perms.push('android.permission.FOREGROUND_SERVICE');
+            perms.push('android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK');
+            perms.push('android.permission.WAKE_LOCK');
+          }
+
+          const tags=[...new Set(perms)]
+            .filter(p=>!xml.includes(`android:name="${p}"`))
+            .map(p=>`    <uses-permission android:name="${p}" />`)
+            .join('\n');
+
+          xml=xml.replace(
+            /<application\b/,
+            tags+'\n    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />\n\n    <application'
+          );
+
+          xml=xml.replace(
+            /<application\b([^>]*)>/,
+            (m,attrs)=>{
+              let a=attrs;
+              if(!/android:hardwareAccelerated=/.test(a)) a+=' android:hardwareAccelerated="true"';
+              if(!/android:largeHeap=/.test(a)) a+=' android:largeHeap="true"';
+              return '<application'+a+'>';
+            }
+          );
+
+          fs.writeFileSync(path,xml);
+          console.log('Android permissions added:',perms);
+          NODE
+
+          cat "$MANIFEST" | head -80
+
+      - name: Add native background audio service
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ENABLED="$(node -e "const m=require('./buildsrc/meta.json'); console.log((m.permissions||[]).includes('backgroundAudio')?'yes':'no')")"
+
+          if [ "$ENABLED" != "yes" ]; then
+            echo "Background audio not requested."
+            exit 0
+          fi
+
+          APP_DIR="capapp/android/app/src/main/java/$(echo "$APP_ID" | tr '.' '/')"
+          mkdir -p "$APP_DIR"
+
+          cat > "$APP_DIR/BackgroundAudioService.java" <<'JAVA'
+package __PACKAGE__;
+
+import android.app.*;
+import android.content.*;
+import android.media.*;
+import android.net.Uri;
+import android.os.*;
+import androidx.core.app.NotificationCompat;
+
+public class BackgroundAudioService extends Service {
+
+  public static final String CH="forgeapk_media";
+  private MediaPlayer player;
+
+  @Override
+  public void onCreate(){
+    super.onCreate();
+
+    if(Build.VERSION.SDK_INT>=26){
+      NotificationChannel c=
+        new NotificationChannel(
+          CH,
+          "Media playback",
+          NotificationManager.IMPORTANCE_LOW
+        );
+
+      getSystemService(NotificationManager.class)
+        .createNotificationChannel(c);
+    }
+  }
+
+  private Notification note(String title){
+
+    Intent i=new Intent(this,MainActivity.class);
+
+    PendingIntent pi=
+      PendingIntent.getActivity(
+        this,
+        0,
+        i,
+        PendingIntent.FLAG_IMMUTABLE |
+        PendingIntent.FLAG_UPDATE_CURRENT
+      );
+
+    return new NotificationCompat.Builder(this,CH)
+      .setSmallIcon(android.R.drawable.ic_media_play)
+      .setContentTitle(
+        title==null
+          ? "Audio Playback"
+          : title
+      )
+      .setContentText("Playing in background")
+      .setOngoing(true)
+      .setContentIntent(pi)
+      .build();
+  }
+
+  @Override
+  public int onStartCommand(
+    Intent intent,
+    int flags,
+    int startId
+  ){
+
+    String action=
+      intent!=null
+        ? intent.getAction()
+        : "";
+
+    if("PLAY".equals(action)){
+
+      String url=intent.getStringExtra("url");
+      String title=intent.getStringExtra("title");
+
+      startForeground(
+        4881,
+        note(title)
+      );
+
+      try{
+
+        if(player!=null){
+          player.stop();
+          player.release();
+        }
+
+        player=new MediaPlayer();
+
+        player.setWakeMode(
+          getApplicationContext(),
+          PowerManager.PARTIAL_WAKE_LOCK
+        );
+
+        player.setAudioAttributes(
+          new AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(
+              AudioAttributes.CONTENT_TYPE_MUSIC
+            )
+            .build()
+        );
+
+        player.setDataSource(
+          getApplicationContext(),
+          Uri.parse(url)
+        );
+
+        player.setOnPreparedListener(
+          MediaPlayer::start
+        );
+
+        player.setOnCompletionListener(
+          mp->stopSelf()
+        );
+
+        player.prepareAsync();
+
+      }catch(Exception e){
+        stopSelf();
+      }
+
+    }else if("PAUSE".equals(action)){
+
+      if(
+        player!=null &&
+        player.isPlaying()
+      ){
+        player.pause();
+      }
+
+    }else if("RESUME".equals(action)){
+
+      if(
+        player!=null &&
+        !player.isPlaying()
+      ){
+        player.start();
+      }
+
+    }else if("STOP".equals(action)){
+
+      if(player!=null){
+
+        try{
+          player.stop();
+        }catch(Exception ignored){}
+
+        player.release();
+        player=null;
+      }
+
+      stopForeground(true);
+      stopSelf();
+    }
+
+    return START_NOT_STICKY;
+  }
+
+  @Override
+  public void onDestroy(){
+
+    if(player!=null){
+
+      try{
+        player.stop();
+      }catch(Exception ignored){}
+
+      player.release();
+      player=null;
+    }
+
+    super.onDestroy();
+  }
+
+  @Override
+  public IBinder onBind(
+    Intent intent
+  ){
+    return null;
+  }
+}
+JAVA
+
+          cat > "$APP_DIR/BackgroundAudioPlugin.java" <<'JAVA'
+package __PACKAGE__;
+
+import android.content.Intent;
+import androidx.core.content.ContextCompat;
+import com.getcapacitor.*;
+import com.getcapacitor.annotation.CapacitorPlugin;
+
+@CapacitorPlugin(
+  name="BackgroundAudio"
+)
+public class BackgroundAudioPlugin
+  extends Plugin {
+
+  @PluginMethod
+  public void play(
+    PluginCall call
+  ){
+
+    String url=
+      call.getString("url");
+
+    String title=
+      call.getString(
+        "title",
+        "Now Playing"
+      );
+
+    if(
+      url==null ||
+      url.isEmpty()
+    ){
+      call.reject(
+        "Missing audio URL"
+      );
+      return;
+    }
+
+    Intent i=
+      new Intent(
+        getContext(),
+        BackgroundAudioService.class
+      );
+
+    i.setAction("PLAY");
+    i.putExtra("url",url);
+    i.putExtra("title",title);
+
+    ContextCompat
+      .startForegroundService(
+        getContext(),
+        i
+      );
+
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void pause(
+    PluginCall call
+  ){
+    send("PAUSE");
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void resume(
+    PluginCall call
+  ){
+    send("RESUME");
+    call.resolve();
+  }
+
+  @PluginMethod
+  public void stop(
+    PluginCall call
+  ){
+    send("STOP");
+    call.resolve();
+  }
+
+  private void send(
+    String action
+  ){
+
+    Intent i=
+      new Intent(
+        getContext(),
+        BackgroundAudioService.class
+      );
+
+    i.setAction(action);
+
+    getContext()
+      .startService(i);
+  }
+}
+JAVA
+
+          sed -i \
+            "s/package __PACKAGE__;/package $APP_ID;/" \
+            "$APP_DIR/BackgroundAudioService.java" \
+            "$APP_DIR/BackgroundAudioPlugin.java"
+
+          cat > "$APP_DIR/MainActivity.java" <<JAVA
+package $APP_ID;
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity
+  extends BridgeActivity {
+
+  @Override
+  public void onCreate(
+    Bundle savedInstanceState
+  ){
+
+    registerPlugin(
+      BackgroundAudioPlugin.class
+    );
+
+    super.onCreate(
+      savedInstanceState
+    );
+  }
+}
+JAVA
+
+          python3 - <<'PY'
+from pathlib import Path
+
+p=Path(
+  "capapp/android/app/src/main/AndroidManifest.xml"
+)
+
+s=p.read_text()
+
+service='''        <service
+            android:name=".BackgroundAudioService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+'''
+
+if '.BackgroundAudioService' not in s:
+    s=s.replace(
+      '</application>',
+      service+'    </application>'
+    )
+
+p.write_text(s)
+PY
+
+      - name: Generate Android icon
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd capapp
+
+          if [ -f assets/icon.png ] || \
+             [ -f assets/icon.jpg ] || \
+             [ -f assets/icon.jpeg ]; then
+
+            npx @capacitor/assets generate \
+              --android || true
+
+          else
+
+            echo "No custom app icon uploaded."
+
+          fi
+
+      - name: Build Android APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd capapp/android
+
+          chmod +x gradlew
+
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
+
+      - name: Locate generated APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p output
+
+          APK="$(
+            find \
+              capapp/android/app/build/outputs/apk/debug \
+              -name '*.apk' \
+              -type f \
+              | head -n 1
+          )"
+
+          test -n "$APK" || {
+            echo "ERROR: APK file not found"
+            exit 1
+          }
+
+          cp \
+            "$APK" \
+            "output/app-${{ inputs.build_id }}.apk"
+
+          ls -lh output
+
+      - name: Publish only latest APK for direct download
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config \
+            user.name \
+            "github-actions[bot]"
+
+          git config \
+            user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git pull \
+            --rebase \
+            origin \
+            main
+
+          mkdir -p downloads
+
+          find downloads \
+            -maxdepth 1 \
+            -type f \
+            -name '*.apk' \
+            -delete || true
+
+          cp \
+            "output/app-${{ inputs.build_id }}.apk" \
+            "downloads/app-${{ inputs.build_id }}.apk"
+
+          git add -A downloads
+
+          if [ -f "jobs/${{ inputs.build_id }}.zip" ]; then
+            git rm \
+              -f \
+              "jobs/${{ inputs.build_id }}.zip"
+          fi
+
+          if ! git diff \
+            --cached \
+            --quiet; then
+
+            git commit \
+              -m \
+              "Publish latest APK ${{ inputs.build_id }}"
+
+            git push \
+              origin \
+              main
+
+          fi
+
+      - name: Upload APK artifact backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-${{ inputs.build_id }}
+          path: output/*.apk
+          if-no-files-found: error
+          retention-days: 3
